@@ -1,0 +1,9 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // The Node API uses the Admin SDK, so these client rules can stay closed.
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

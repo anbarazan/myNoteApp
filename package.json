@@ -1,0 +1,17 @@
+{
+  "name": "firestore-react-node-starter",
+  "private": true,
+  "version": "1.0.0",
+  "workspaces": ["client", "server", "functions"],
+  "scripts": {
+    "dev": "concurrently \"npm run dev --workspace client\" \"npm run dev --workspace server\"",
+    "build": "npm run build --workspace client",
+    "start": "npm run start --workspace server",
+    "install-all": "npm install --workspaces",
+    "deploy": "npm run build && firebase deploy"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2",
+    "firebase-tools": "^14.16.0"
+  }
+}
