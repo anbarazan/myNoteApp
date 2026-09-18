@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { createUserWithEmailAndPassword, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
-import { addDoc, collection, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore'
+import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
 
 const authErrorMessages = {
@@ -26,6 +26,13 @@ function App() {
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [deletingId, setDeletingId] = useState('')
+  const [editingId, setEditingId] = useState('')
+  const [editingText, setEditingText] = useState('')
+  const [search, setSearch] = useState('')
+  const [view, setView] = useState('all')
+  const [dateRange, setDateRange] = useState('all')
+  const [sortOrder, setSortOrder] = useState('newest')
+  const [updatingId, setUpdatingId] = useState('')
   const [error, setError] = useState('')
 
   useEffect(() => {
@@ -53,7 +60,7 @@ function App() {
     getDocs(query(collection(db, 'notes'), where('ownerId', '==', user.uid)))
       .then((snapshot) => {
         const nextNotes = snapshot.docs
-          .map((note) => ({ id: note.id, ...note.data() }))
+          .map((note) => ({ id: note.id, pinned: false, ...note.data() }))
           .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         if (!cancelled) setNotes(nextNotes)
       })
@@ -100,8 +107,8 @@ function App() {
     setSaving(true)
     try {
       const createdAt = new Date().toISOString()
-      const document = await addDoc(collection(db, 'notes'), { text: text.trim(), ownerId: user.uid, createdAt })
-      const savedNote = { id: document.id, text: text.trim(), createdAt }
+      const document = await addDoc(collection(db, 'notes'), { text: text.trim(), ownerId: user.uid, createdAt, pinned: false })
+      const savedNote = { id: document.id, text: text.trim(), createdAt, pinned: false }
       setNotes((currentNotes) => [savedNote, ...currentNotes])
       setText('')
       setError('')
@@ -111,6 +118,66 @@ function App() {
       setSaving(false)
     }
   }
+
+  function beginEdit(note) {
+    setEditingId(note.id)
+    setEditingText(note.text)
+    setError('')
+  }
+
+  function cancelEdit() {
+    setEditingId('')
+    setEditingText('')
+  }
+
+  async function saveEdit(noteId) {
+    if (!editingText.trim()) return
+    setUpdatingId(noteId)
+    try {
+      const updatedAt = new Date().toISOString()
+      await updateDoc(doc(db, 'notes', noteId), { text: editingText.trim(), updatedAt })
+      setNotes((currentNotes) => currentNotes.map((note) => note.id === noteId ? { ...note, text: editingText.trim(), updatedAt } : note))
+      cancelEdit()
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setUpdatingId('')
+    }
+  }
+
+  async function togglePin(note) {
+    setUpdatingId(note.id)
+    try {
+      await updateDoc(doc(db, 'notes', note.id), { pinned: !note.pinned })
+      setNotes((currentNotes) => currentNotes.map((item) => item.id === note.id ? { ...item, pinned: !note.pinned } : item))
+    } catch (requestError) {
+      setError(requestError.message)
+    } finally {
+      setUpdatingId('')
+    }
+  }
+
+  const pinnedCount = notes.filter((note) => note.pinned).length
+  const rangeStart = new Date()
+  rangeStart.setHours(0, 0, 0, 0)
+  if (dateRange === 'week') {
+    const day = rangeStart.getDay()
+    rangeStart.setDate(rangeStart.getDate() - (day === 0 ? 6 : day - 1))
+  }
+  if (dateRange === 'month') rangeStart.setDate(1)
+  if (dateRange === 'year') {
+    rangeStart.setMonth(0, 1)
+  }
+
+  const visibleNotes = notes.filter((note) => {
+    const matchesView = view === 'all' || (view === 'pinned' && note.pinned)
+    const matchesSearch = note.text.toLowerCase().includes(search.toLowerCase().trim())
+    const matchesDate = dateRange === 'all' || new Date(note.createdAt) >= rangeStart
+    return matchesView && matchesSearch && matchesDate
+  }).sort((left, right) => {
+    const difference = new Date(left.updatedAt || left.createdAt) - new Date(right.updatedAt || right.createdAt)
+    return sortOrder === 'newest' ? -difference : difference
+  })
 
   async function deleteNote(noteId) {
     setDeletingId(noteId)
@@ -153,35 +220,17 @@ function App() {
   )
 
   return (
-    <main className="shell">
-      <section className="intro">
-        <p className="eyebrow">FIELD NOTES / FIRESTORE</p>
-        <h1>Keep the useful<br /><em>bits.</em></h1>
-        <p className="lede">A tiny full-stack notebook. React in the browser, Node at the edge, Firestore underneath.</p>
-        <div className="account"><div className="signal"><span /> Private notebook</div><button className="text-button" onClick={() => signOut(auth)}>Sign out</button></div>
-      </section>
-
-      <section className="workspace">
-        <form className="composer" onSubmit={addNote}>
-          <label htmlFor="note">New note</label>
-          <textarea id="note" value={text} onChange={(event) => setText(event.target.value)} placeholder="Something worth remembering..." rows="4" />
-          <button type="submit" disabled={saving || !text.trim()}>{saving ? 'Saving...' : 'Add to the field'}</button>
-        </form>
-
-        <div className="notes-header">
-          <h2>Recent notes</h2>
-          <span>{notes.length.toString().padStart(2, '0')}</span>
-        </div>
-        {error && <p className="error">{error}</p>}
-        <div className="notes-list">
-          {loading ? <p className="empty">Reading the field...</p> : notes.length === 0 ? <p className="empty">No notes yet. Start with the first one.</p> : notes.map((note) => (
-            <article className="note" key={note.id}>
-              <div className="note-content"><p>{note.text}</p><time>{new Date(note.createdAt).toLocaleString()}</time></div>
-              <button className="delete-button" type="button" onClick={() => deleteNote(note.id)} disabled={deletingId === note.id} aria-label={`Delete note: ${note.text}`}>
-                {deletingId === note.id ? 'Deleting...' : 'Delete'}
-              </button>
-            </article>
-          ))}
+    <main className="compact-shell">
+      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span>Field Notes</span></div><nav className="compact-nav"><button className={view === 'all' ? 'selected' : ''} type="button" onClick={() => setView('all')}>All notes <b>{notes.length}</b></button><button className={view === 'pinned' ? 'selected' : ''} type="button" onClick={() => setView('pinned')}>Pinned <b>{pinnedCount}</b></button></nav><div className="compact-account"><span className="avatar">{(user.displayName || user.email || 'U').charAt(0).toUpperCase()}</span><span className="account-email">{user.email}</span><button className="logout-button" onClick={() => signOut(auth)}>Sign out</button></div></header>
+      <section className="compact-content">
+        <div className="compact-heading"><div><p className="section-kicker">{view === 'pinned' ? 'PINNED NOTES' : 'YOUR NOTES'}</p><h1>{view === 'pinned' ? 'Saved for later.' : 'Your notes.'}</h1></div><div className="compact-date">{new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date())}<br /><span>{notes.length} notes in your archive</span></div></div>
+        <div className="compact-layout">
+          <section className="notes-stage">
+            <div className="notes-toolbar"><label className="search-field" htmlFor="search"><span>⌕</span><input id="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" /></label><div className="view-tabs"><button className={view === 'all' ? 'active' : ''} type="button" onClick={() => setView('all')}>All <span>{notes.length}</span></button><button className={view === 'pinned' ? 'active' : ''} type="button" onClick={() => setView('pinned')}>Pinned <span>{pinnedCount}</span></button></div></div>
+            <div className="date-toolbar"><label>Period <select value={dateRange} onChange={(event) => setDateRange(event.target.value)}><option value="all">All time</option><option value="week">This week</option><option value="month">This month</option><option value="year">This year</option></select></label><label>Sort <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><span className="result-count">{visibleNotes.length} shown</span></div>
+            {error && <p className="error">{error}</p>}<div className="notes-list">{loading ? <p className="empty">Gathering your notes...</p> : visibleNotes.length === 0 ? <p className="empty">{search ? 'No notes match that search.' : view === 'pinned' ? 'Nothing pinned yet.' : 'Your archive is waiting for its first note.'}</p> : visibleNotes.map((note, index) => <article className="note" key={note.id}><div className="note-index">{String(index + 1).padStart(2, '0')}</div><div className="note-content">{editingId === note.id ? <textarea className="edit-input" value={editingText} onChange={(event) => setEditingText(event.target.value)} autoFocus rows="3" /> : <p>{note.text}</p>}<time>{note.updatedAt ? 'Edited ' : ''}{new Date(note.updatedAt || note.createdAt).toLocaleString()}</time></div><div className="note-actions">{editingId === note.id ? <><button className="action-button save-action" type="button" onClick={() => saveEdit(note.id)} disabled={updatingId === note.id}>{updatingId === note.id ? 'Saving...' : 'Save'}</button><button className="action-button" type="button" onClick={cancelEdit}>Cancel</button></> : <><button className={`pin-button ${note.pinned ? 'pinned' : ''}`} type="button" onClick={() => togglePin(note)} disabled={updatingId === note.id} aria-label={note.pinned ? 'Unpin note' : 'Pin note'}>{note.pinned ? '★' : '☆'}</button><button className="action-button" type="button" onClick={() => beginEdit(note)}>Edit</button><button className="action-button delete-button" type="button" onClick={() => deleteNote(note.id)} disabled={deletingId === note.id}>{deletingId === note.id ? 'Deleting...' : 'Delete'}</button></>}</div></article>)}</div>
+          </section>
+          <aside className="quick-capture"><div className="quick-title"><span>✦</span><strong>Quick capture</strong></div><p>Get it out of your head and into your archive.</p><form onSubmit={addNote}><textarea id="note" value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a note..." rows="6" maxLength="5000" /><div className="composer-footer"><span>{text.length}/5000</span><button type="submit" disabled={saving || !text.trim()}>{saving ? 'Saving...' : 'Save note'} <span>↗</span></button></div></form><div className="quick-tip"><span>⌘</span><p>Tip<br /><strong>Pin anything</strong> you want close at hand.</p></div></aside>
         </div>
       </section>
     </main>
