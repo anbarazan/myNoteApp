@@ -78,11 +78,22 @@ Start both the Vite UI and the Express API:
 npm run dev
 ```
 
-Open <http://localhost:5173>.
+Before opening the app, create `client/.env.local` with the web app configuration from Firebase Console > Project settings > Your apps:
+
+```bash
+VITE_FIREBASE_API_KEY=your-api-key
+VITE_FIREBASE_AUTH_DOMAIN=your-project.firebaseapp.com
+VITE_FIREBASE_PROJECT_ID=your-project-id
+VITE_FIREBASE_STORAGE_BUCKET=your-project.firebasestorage.app
+VITE_FIREBASE_MESSAGING_SENDER_ID=your-sender-id
+VITE_FIREBASE_APP_ID=your-app-id
+```
+
+Then enable **Authentication > Sign-in method > Email/Password** in Firebase Console and open <http://localhost:5173>.
 
 - Vite serves the React app on port `5173`.
 - Vite proxies `/api` requests to Express on port `3000`.
-- Express serves `/api/health`, `GET /api/notes`, and `POST /api/notes`.
+- Express serves `/api/health`, `GET /api/notes`, and `POST /api/notes`. Note endpoints require a Firebase ID token and return only notes owned by the signed-in account.
 
 You can check the API directly:
 
@@ -156,17 +167,17 @@ Returns:
 
 ### `GET /api/notes`
 
-Returns the latest notes from the Firestore `notes` collection.
+Requires `Authorization: Bearer FIREBASE_ID_TOKEN`. Returns the latest notes belonging to the authenticated account.
 
 ### `POST /api/notes`
 
-Request body:
+Requires `Authorization: Bearer FIREBASE_ID_TOKEN`. Request body:
 
 ```json
 { "text": "Remember this." }
 ```
 
-The server adds an ISO timestamp and creates the document in Firestore.
+The server verifies the token, adds the authenticated user's ID and an ISO timestamp, and creates the document in Firestore.
 
 ## Project notes
 
