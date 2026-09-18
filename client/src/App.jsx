@@ -2,6 +2,10 @@ import { useEffect, useState } from 'react'
 import { createUserWithEmailAndPassword, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
 import { addDoc, collection, deleteDoc, doc, getDocs, query, updateDoc, where } from 'firebase/firestore'
 import { auth, db, firebaseConfigured } from './firebase'
+import NoteList from './components/NoteList'
+import ProfileMenu from './components/ProfileMenu'
+import QuickCapture from './components/QuickCapture'
+import SettingsPage from './components/SettingsPage'
 
 const authErrorMessages = {
   'auth/email-already-in-use': 'That email is already registered. Try signing in.',
@@ -32,6 +36,10 @@ function App() {
   const [view, setView] = useState('all')
   const [dateRange, setDateRange] = useState('all')
   const [sortOrder, setSortOrder] = useState('newest')
+  const [page, setPage] = useState('notes')
+  const [profileOpen, setProfileOpen] = useState(false)
+  const [theme, setTheme] = useState(() => localStorage.getItem('field-notes-theme') || 'light')
+  const [density, setDensity] = useState(() => localStorage.getItem('field-notes-density') || 'comfortable')
   const [updatingId, setUpdatingId] = useState('')
   const [error, setError] = useState('')
 
@@ -73,6 +81,11 @@ function App() {
 
     return () => { cancelled = true }
   }, [user])
+
+  useEffect(() => {
+    localStorage.setItem('field-notes-theme', theme)
+    localStorage.setItem('field-notes-density', density)
+  }, [theme, density])
 
   async function submitAuth(event) {
     event.preventDefault()
@@ -220,19 +233,17 @@ function App() {
   )
 
   return (
-    <main className="compact-shell">
-      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span>Field Notes</span></div><nav className="compact-nav"><button className={view === 'all' ? 'selected' : ''} type="button" onClick={() => setView('all')}>All notes <b>{notes.length}</b></button><button className={view === 'pinned' ? 'selected' : ''} type="button" onClick={() => setView('pinned')}>Pinned <b>{pinnedCount}</b></button></nav><div className="compact-account"><span className="avatar">{(user.displayName || user.email || 'U').charAt(0).toUpperCase()}</span><span className="account-email">{user.email}</span><button className="logout-button" onClick={() => signOut(auth)}>Sign out</button></div></header>
-      <section className="compact-content">
+    <main className={`compact-shell ${theme} ${density}`}>
+      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span>Field Notes</span></div><nav className="compact-nav"><button className={page === 'notes' && view === 'all' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('all') }}>All notes <b>{notes.length}</b></button><button className={page === 'notes' && view === 'pinned' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('pinned') }}>Pinned <b>{pinnedCount}</b></button></nav><ProfileMenu user={user} open={profileOpen} onToggle={setProfileOpen} onSettings={() => { setPage('settings'); setProfileOpen(false) }} onSignOut={() => signOut(auth)} /></header>
+      {page === 'settings' ? <SettingsPage theme={theme} density={density} notesCount={notes.length} pinnedCount={pinnedCount} onThemeChange={setTheme} onDensityChange={setDensity} onBack={() => setPage('notes')} /> : <section className="compact-content">
         <div className="compact-heading"><div><p className="section-kicker">{view === 'pinned' ? 'PINNED NOTES' : 'YOUR NOTES'}</p><h1>{view === 'pinned' ? 'Saved for later.' : 'Your notes.'}</h1></div><div className="compact-date">{new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date())}<br /><span>{notes.length} notes in your archive</span></div></div>
         <div className="compact-layout">
           <section className="notes-stage">
-            <div className="notes-toolbar"><label className="search-field" htmlFor="search"><span>⌕</span><input id="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search notes" /></label><div className="view-tabs"><button className={view === 'all' ? 'active' : ''} type="button" onClick={() => setView('all')}>All <span>{notes.length}</span></button><button className={view === 'pinned' ? 'active' : ''} type="button" onClick={() => setView('pinned')}>Pinned <span>{pinnedCount}</span></button></div></div>
-            <div className="date-toolbar"><label>Period <select value={dateRange} onChange={(event) => setDateRange(event.target.value)}><option value="all">All time</option><option value="week">This week</option><option value="month">This month</option><option value="year">This year</option></select></label><label>Sort <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)}><option value="newest">Newest first</option><option value="oldest">Oldest first</option></select></label><span className="result-count">{visibleNotes.length} shown</span></div>
-            {error && <p className="error">{error}</p>}<div className="notes-list">{loading ? <p className="empty">Gathering your notes...</p> : visibleNotes.length === 0 ? <p className="empty">{search ? 'No notes match that search.' : view === 'pinned' ? 'Nothing pinned yet.' : 'Your archive is waiting for its first note.'}</p> : visibleNotes.map((note, index) => <article className="note" key={note.id}><div className="note-index">{String(index + 1).padStart(2, '0')}</div><div className="note-content">{editingId === note.id ? <textarea className="edit-input" value={editingText} onChange={(event) => setEditingText(event.target.value)} autoFocus rows="3" /> : <p>{note.text}</p>}<time>{note.updatedAt ? 'Edited ' : ''}{new Date(note.updatedAt || note.createdAt).toLocaleString()}</time></div><div className="note-actions">{editingId === note.id ? <><button className="action-button save-action" type="button" onClick={() => saveEdit(note.id)} disabled={updatingId === note.id}>{updatingId === note.id ? 'Saving...' : 'Save'}</button><button className="action-button" type="button" onClick={cancelEdit}>Cancel</button></> : <><button className={`pin-button ${note.pinned ? 'pinned' : ''}`} type="button" onClick={() => togglePin(note)} disabled={updatingId === note.id} aria-label={note.pinned ? 'Unpin note' : 'Pin note'}>{note.pinned ? '★' : '☆'}</button><button className="action-button" type="button" onClick={() => beginEdit(note)}>Edit</button><button className="action-button delete-button" type="button" onClick={() => deleteNote(note.id)} disabled={deletingId === note.id}>{deletingId === note.id ? 'Deleting...' : 'Delete'}</button></>}</div></article>)}</div>
+            <NoteList loading={loading} error={error} visibleNotes={visibleNotes} notes={notes} pinnedCount={pinnedCount} view={view} search={search} dateRange={dateRange} sortOrder={sortOrder} onViewChange={setView} onSearchChange={setSearch} onDateChange={setDateRange} onSortChange={setSortOrder} editingId={editingId} editingText={editingText} updatingId={updatingId} deletingId={deletingId} onEditTextChange={setEditingText} onBeginEdit={beginEdit} onCancelEdit={cancelEdit} onSaveEdit={saveEdit} onTogglePin={togglePin} onDelete={deleteNote} />
           </section>
-          <aside className="quick-capture"><div className="quick-title"><span>✦</span><strong>Quick capture</strong></div><p>Get it out of your head and into your archive.</p><form onSubmit={addNote}><textarea id="note" value={text} onChange={(event) => setText(event.target.value)} placeholder="Write a note..." rows="6" maxLength="5000" /><div className="composer-footer"><span>{text.length}/5000</span><button type="submit" disabled={saving || !text.trim()}>{saving ? 'Saving...' : 'Save note'} <span>↗</span></button></div></form><div className="quick-tip"><span>⌘</span><p>Tip<br /><strong>Pin anything</strong> you want close at hand.</p></div></aside>
+          <QuickCapture text={text} saving={saving} onTextChange={setText} onSubmit={addNote} />
         </div>
-      </section>
+      </section>}
     </main>
   )
 }
