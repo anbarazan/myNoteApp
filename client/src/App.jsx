@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { createUserWithEmailAndPassword, GoogleAuthProvider, onAuthStateChanged, signInWithEmailAndPassword, signInWithPopup, signOut } from 'firebase/auth'
-import { auth, firebaseConfigured } from './firebase'
+import { addDoc, collection, deleteDoc, doc, getDocs, query, where } from 'firebase/firestore'
+import { auth, db, firebaseConfigured } from './firebase'
 
 const authErrorMessages = {
   'auth/email-already-in-use': 'That email is already registered. Try signing in.',
@@ -38,11 +39,6 @@ function App() {
     })
   }, [])
 
-  async function authenticatedRequest(path, options = {}) {
-    const token = await user.getIdToken()
-    return fetch(path, { ...options, headers: { ...options.headers, Authorization: `Bearer ${token}` } })
-  }
-
   useEffect(() => {
     let cancelled = false
     setNotes([])
@@ -54,10 +50,11 @@ function App() {
     }
 
     setLoading(true)
-    authenticatedRequest('/api/notes')
-      .then(async (response) => {
-        if (!response.ok) throw new Error('Could not load notes.')
-        const nextNotes = await response.json()
+    getDocs(query(collection(db, 'notes'), where('ownerId', '==', user.uid)))
+      .then((snapshot) => {
+        const nextNotes = snapshot.docs
+          .map((note) => ({ id: note.id, ...note.data() }))
+          .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
         if (!cancelled) setNotes(nextNotes)
       })
       .catch((requestError) => {
@@ -102,16 +99,9 @@ function App() {
     if (!text.trim()) return
     setSaving(true)
     try {
-      const response = await authenticatedRequest('/api/notes', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text })
-      })
-      if (!response.ok) {
-        const body = await response.json()
-        throw new Error(body.error || 'Could not save note.')
-      }
-      const savedNote = await response.json()
+      const createdAt = new Date().toISOString()
+      const document = await addDoc(collection(db, 'notes'), { text: text.trim(), ownerId: user.uid, createdAt })
+      const savedNote = { id: document.id, text: text.trim(), createdAt }
       setNotes((currentNotes) => [savedNote, ...currentNotes])
       setText('')
       setError('')
@@ -126,11 +116,7 @@ function App() {
     setDeletingId(noteId)
     setError('')
     try {
-      const response = await authenticatedRequest(`/api/notes/${noteId}`, { method: 'DELETE' })
-      if (!response.ok) {
-        const body = await response.json()
-        throw new Error(body.error || 'Could not delete note.')
-      }
+      await deleteDoc(doc(db, 'notes', noteId))
       setNotes((currentNotes) => currentNotes.filter((note) => note.id !== noteId))
     } catch (requestError) {
       setError(requestError.message)
