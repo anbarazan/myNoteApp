@@ -6,6 +6,7 @@ import NoteList from './components/NoteList'
 import ProfileMenu from './components/ProfileMenu'
 import QuickCapture from './components/QuickCapture'
 import SettingsPage from './components/SettingsPage'
+import CalendarView from './components/CalendarView'
 
 const authErrorMessages = {
   'auth/email-already-in-use': 'That email is already registered. Try signing in.',
@@ -234,8 +235,8 @@ function App() {
 
   return (
     <main className={`compact-shell ${theme} ${density}`}>
-      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span>Field Notes</span></div><nav className="compact-nav"><button className={page === 'notes' && view === 'all' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('all') }}>All notes <b>{notes.length}</b></button><button className={page === 'notes' && view === 'pinned' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('pinned') }}>Pinned <b>{pinnedCount}</b></button></nav><ProfileMenu user={user} open={profileOpen} onToggle={setProfileOpen} onSettings={() => { setPage('settings'); setProfileOpen(false) }} onSignOut={() => signOut(auth)} /></header>
-      {page === 'settings' ? <SettingsPage theme={theme} density={density} notesCount={notes.length} pinnedCount={pinnedCount} onThemeChange={setTheme} onDensityChange={setDensity} onBack={() => setPage('notes')} /> : <section className="compact-content">
+      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span>Field Notes</span></div><nav className="compact-nav"><button className={page === 'notes' && view === 'all' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('all') }}>All notes <b>{notes.length}</b></button><button className={page === 'notes' && view === 'pinned' ? 'selected' : ''} type="button" onClick={() => { setPage('notes'); setView('pinned') }}>Pinned <b>{pinnedCount}</b></button><button className={page === 'calendar' ? 'selected' : ''} type="button" onClick={() => setPage('calendar')}>Calendar</button></nav><div className="topbar-tools"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>{theme === 'dark' ? '☼' : '☾'}</button><ProfileMenu user={user} open={profileOpen} onToggle={setProfileOpen} onSettings={() => { setPage('settings'); setProfileOpen(false) }} onSignOut={() => signOut(auth)} /></div></header>
+      {page === 'settings' ? <SettingsPage theme={theme} density={density} notesCount={notes.length} pinnedCount={pinnedCount} onThemeChange={setTheme} onDensityChange={setDensity} onBack={() => setPage('notes')} /> : page === 'calendar' ? <CalendarView /> : <section className="compact-content">
         <div className="compact-heading"><div><p className="section-kicker">{view === 'pinned' ? 'PINNED NOTES' : 'YOUR NOTES'}</p><h1>{view === 'pinned' ? 'Saved for later.' : 'Your notes.'}</h1></div><div className="compact-date">{new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date())}<br /><span>{notes.length} notes in your archive</span></div></div>
         <div className="compact-layout">
           <section className="notes-stage">
