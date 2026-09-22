@@ -1,6 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { collection, getDocs, orderBy, query } from 'firebase/firestore'
+import { db } from '../firebase'
 
-const events = [
+/* Event records are managed in Firestore; this component only renders them. */
+const typeLabels = { festival: 'Festival', public: 'Public holiday', community: 'Community' }
+
+/*
   { date: '2026-01-01', title: 'New Year\'s Day', type: 'public', region: 'All India', details: 'The first day of the Gregorian calendar year.' },
   { date: '2026-01-14', title: 'Makar Sankranti', type: 'festival', region: 'All India', details: 'Harvest festival observed as Pongal, Lohri, Magh Bihu, and Uttarayan across India.' },
   { date: '2026-01-15', title: 'Pongal', type: 'festival', region: 'Tamil Nadu', details: 'Four-day Tamil harvest festival celebrating the Sun, cattle, and the new harvest.' },
@@ -25,8 +30,7 @@ const events = [
   { date: '2026-11-24', title: 'Guru Nanak Jayanti', type: 'festival', region: 'Sikh communities', details: 'Birth anniversary of Guru Nanak Dev Ji.' },
   { date: '2026-12-25', title: 'Christmas Day', type: 'public', region: 'All India', details: 'Christian holiday celebrating the birth of Jesus Christ.' }
 ]
-
-const typeLabels = { festival: 'Festival', public: 'Public holiday', community: 'Community' }
+*/
 
 function toDateKey(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
@@ -36,6 +40,9 @@ function CalendarView() {
   const [month, setMonth] = useState(() => new Date(2026, 8, 1))
   const [selectedEvent, setSelectedEvent] = useState(null)
   const [selectedDay, setSelectedDay] = useState(null)
+  const [events, setEvents] = useState([])
+  const [eventsLoading, setEventsLoading] = useState(true)
+  const [eventsError, setEventsError] = useState('')
   const year = month.getFullYear()
   const monthIndex = month.getMonth()
   const firstDay = new Date(year, monthIndex, 1)
@@ -46,6 +53,13 @@ function CalendarView() {
     const day = new Date(year, monthIndex, index - leadingDays + 1)
     return { date: day, key: toDateKey(day), inMonth: day.getMonth() === monthIndex }
   })
+
+  useEffect(() => {
+    getDocs(query(collection(db, 'events'), orderBy('date')))
+      .then((snapshot) => setEvents(snapshot.docs.map((event) => ({ id: event.id, ...event.data() }))))
+      .catch(() => setEventsError('Calendar events could not be loaded.'))
+      .finally(() => setEventsLoading(false))
+  }, [])
 
   const eventsForDay = (dateKey) => events.filter((event) => event.date === dateKey)
 
@@ -64,7 +78,7 @@ function CalendarView() {
       <div className="calendar-card">
         <div className="calendar-toolbar"><button className="month-arrow" type="button" onClick={() => moveMonth(-1)} aria-label="Previous month">‹</button><h2>{monthLabel}</h2><button className="month-arrow" type="button" onClick={() => moveMonth(1)} aria-label="Next month">›</button></div>
         <div className="calendar-weekdays">{['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => <span key={day}>{day}</span>)}</div>
-        <div className="calendar-grid">{cells.map(({ date, key, inMonth }) => { const dayEvents = eventsForDay(key); const visibleEvents = dayEvents.slice(0, 3); const moreCount = dayEvents.length - visibleEvents.length; return <div className={`calendar-cell ${inMonth ? '' : 'outside-month'} ${key === todayKey ? 'today' : ''}`} key={key}><span className="day-number">{date.getDate()}</span><div className="cell-events">{visibleEvents.map((event) => <button className={`calendar-event ${event.type}`} type="button" key={`${event.date}-${event.title}`} onClick={() => setSelectedEvent(event)} title={event.title}><i />{event.title}</button>)}{moreCount > 0 && <button className="more-events" type="button" onClick={() => openDay(date, dayEvents)}>+{moreCount} more</button>}</div>{dayEvents.length > 0 && dayEvents.length <= 3 && <button className="day-details" type="button" onClick={() => openDay(date, dayEvents)} aria-label={`View events for ${key}`}>+</button>}</div> })}</div>
+        {eventsLoading ? <p className="calendar-loading">Loading events...</p> : eventsError ? <p className="error">{eventsError}</p> : <div className="calendar-grid">{cells.map(({ date, key, inMonth }) => { const dayEvents = eventsForDay(key); const visibleEvents = dayEvents.slice(0, 3); const moreCount = dayEvents.length - visibleEvents.length; return <div className={`calendar-cell ${inMonth ? '' : 'outside-month'} ${key === todayKey ? 'today' : ''}`} key={key}><span className="day-number">{date.getDate()}</span><div className="cell-events">{visibleEvents.map((event) => <button className={`calendar-event ${event.type}`} type="button" key={event.id} onClick={() => setSelectedEvent(event)} title={event.title}><i />{event.title}</button>)}{moreCount > 0 && <button className="more-events" type="button" onClick={() => openDay(date, dayEvents)}>+{moreCount} more</button>}</div>{dayEvents.length > 0 && dayEvents.length <= 3 && <button className="day-details" type="button" onClick={() => openDay(date, dayEvents)} aria-label={`View events for ${key}`}>+</button>}</div> })}</div>}
         <div className="calendar-legend"><span><i className="legend-dot festival" /> Festival</span><span><i className="legend-dot public" /> Public holiday</span><span><i className="legend-dot community" /> Community</span></div>
       </div>
       {selectedEvent && <div className="event-modal-backdrop" role="presentation" onClick={() => setSelectedEvent(null)}><div className="event-modal" role="dialog" aria-modal="true" aria-label="Event details" onClick={(event) => event.stopPropagation()}><button className="modal-close" type="button" onClick={() => setSelectedEvent(null)} aria-label="Close event details">×</button><span className={`event-pill ${selectedEvent.type}`}>{typeLabels[selectedEvent.type]}</span><h2>{selectedEvent.title}</h2><p className="event-date">{new Date(`${selectedEvent.date}T00:00:00`).toLocaleDateString('en', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' })}</p><p className="event-region">{selectedEvent.region}</p><p className="event-description">{selectedEvent.details}</p><button className="modal-action" type="button" onClick={() => setSelectedEvent(null)}>Done</button></div></div>}

@@ -1,6 +1,7 @@
 {
   "name": "firestore-react-node-starter",
   "private": true,
+  "type": "module",
   "version": "1.0.0",
   "workspaces": ["client", "server", "functions"],
   "scripts": {
@@ -8,6 +9,7 @@
     "build": "npm run build --workspace client",
     "start": "npm run start --workspace server",
     "install-all": "npm install --workspaces",
+    "seed:calendar": "node scripts/seed-calendar-events.js",
     "deploy": "npm run build && firebase deploy"
   },
   "devDependencies": {

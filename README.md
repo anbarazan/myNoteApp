@@ -2,18 +2,11 @@
 
 A small full-stack notes app:
 
-- `client/`: React + Vite web UI
-- `server/`: Express API for local development
-- `functions/`: Firebase Functions wrapper around the same Express API
-- Firestore is accessed only by the Node server with the Firebase Admin SDK
 
 ## 1. Prerequisites
 
 Install:
 
-- Node.js 20 or newer: <https://nodejs.org/>
-- A Google account
-- Firebase CLI is included in this project and can be run with `npx firebase`.
 
 Verify Node and npm:
 
@@ -91,9 +84,6 @@ VITE_FIREBASE_APP_ID=your-app-id
 
 Then enable **Authentication > Sign-in method > Email/Password** in Firebase Console and open <http://localhost:5173>.
 
-- Vite serves the React app on port `5173`.
-- Vite proxies `/api` requests to Express on port `3000`.
-- Express serves `/api/health`, `GET /api/notes`, and `POST /api/notes`. Note endpoints require a Firebase ID token and return only notes owned by the signed-in account.
 
 You can check the API directly:
 
@@ -122,8 +112,6 @@ The included `firebase.json` does two important things:
 
 That means the browser uses one origin in production:
 
-- Web UI: `https://YOUR_PROJECT_ID.web.app`
-- API: `https://YOUR_PROJECT_ID.web.app/api/notes`
 
 Deploy with:
 
@@ -152,8 +140,6 @@ Open `https://YOUR_PROJECT_ID.web.app` in a browser and add a note. It should ap
 
 Once complete, both the React app and API are available from the same custom domain, for example:
 
-- `https://notes.example.com`
-- `https://notes.example.com/api/health`
 
 ## API shape
 
@@ -181,8 +167,9 @@ The server verifies the token, adds the authenticated user's ID and an ISO times
 
 ## Project notes
 
-- Firestore credentials never ship to the browser.
-- The browser calls relative `/api` URLs, so local and production code use the same API paths.
-- `firebase.json` uses Node 20 for Cloud Functions.
-- For real production use, add authentication and validate/rate-limit writes before exposing the endpoint publicly.
+ The calendar catalog is stored in Firestore. To re-seed the included holiday and festival data after changing `scripts/calendar-events.js`, run:
+
+```bash
+npm run seed:calendar
+```
 # myNoteApp
