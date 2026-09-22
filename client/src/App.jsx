@@ -8,6 +8,9 @@ import QuickCapture from './components/QuickCapture'
 import SettingsPage from './components/SettingsPage'
 import CalendarView from './components/CalendarView'
 
+const SESSION_DURATION_MS = 30 * 60 * 1000
+const SESSION_EXPIRY_KEY = 'field-notes-session-expires'
+
 const authErrorMessages = {
   'auth/email-already-in-use': 'That email is already registered. Try signing in.',
   'auth/invalid-credential': 'The email or password is incorrect.',
@@ -21,6 +24,8 @@ const authErrorMessages = {
 function App() {
   const [user, setUser] = useState(null)
   const [authLoading, setAuthLoading] = useState(true)
+  const [sessionExpired, setSessionExpired] = useState(false)
+  const [sessionTimeLeft, setSessionTimeLeft] = useState(null)
   const [authMode, setAuthMode] = useState('signin')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -51,9 +56,36 @@ function App() {
     }
     return onAuthStateChanged(auth, (nextUser) => {
       setUser(nextUser)
+      if (nextUser) setSessionExpired(false)
       setAuthLoading(false)
     })
   }, [])
+
+  useEffect(() => {
+    if (!user) {
+      setSessionTimeLeft(null)
+      return undefined
+    }
+
+    const storedExpiry = Number(localStorage.getItem(SESSION_EXPIRY_KEY))
+    const expiresAt = storedExpiry > Date.now() ? storedExpiry : Date.now() + SESSION_DURATION_MS
+    localStorage.setItem(SESSION_EXPIRY_KEY, String(expiresAt))
+
+    const updateSessionTimer = () => {
+      const remaining = Math.max(0, expiresAt - Date.now())
+      setSessionTimeLeft(remaining)
+      if (remaining === 0) {
+        localStorage.removeItem(SESSION_EXPIRY_KEY)
+        signOut(auth)
+          .then(() => setSessionExpired(true))
+          .catch(() => setSessionExpired(true))
+      }
+    }
+
+    updateSessionTimer()
+    const timer = window.setInterval(updateSessionTimer, 1000)
+    return () => window.clearInterval(timer)
+  }, [user])
 
   useEffect(() => {
     let cancelled = false
@@ -113,6 +145,12 @@ function App() {
     } finally {
       setAuthSubmitting(false)
     }
+  }
+
+  async function handleSignOut() {
+    localStorage.removeItem(SESSION_EXPIRY_KEY)
+    setSessionExpired(false)
+    await signOut(auth)
   }
 
   async function addNote(event) {
@@ -212,6 +250,7 @@ function App() {
 
   if (!user) return (
     <main className="auth-shell">
+      {sessionExpired && <div className="session-expired-backdrop" role="presentation"><section className="session-expired-popup" role="alertdialog" aria-modal="true" aria-labelledby="session-expired-title"><p className="eyebrow">FIELD NOTES / SESSION</p><h2 id="session-expired-title">You were signed out.</h2><p>Your 30-minute session ended. Sign in again to return to your notes.</p><button type="button" onClick={() => setSessionExpired(false)}>Continue to sign in</button></section></div>}
       <section className="auth-card">
         <p className="eyebrow">FIELD NOTES / PRIVATE</p>
         <h1>Your<br /><em>field.</em></h1>
@@ -233,9 +272,11 @@ function App() {
     </main>
   )
 
+  const formattedTimeLeft = sessionTimeLeft === null ? '--:--' : `${String(Math.floor(sessionTimeLeft / 60000)).padStart(2, '0')}:${String(Math.floor((sessionTimeLeft % 60000) / 1000)).padStart(2, '0')}`
+
   return (
     <main className={`compact-shell ${theme} ${density}`}>
-      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span className="brand-copy"><strong>Field Notes</strong><small>Private workspace</small></span></div><nav className="compact-nav"><button className={page === 'notes' ? 'selected' : ''} type="button" onClick={() => setPage('notes')}><span>▤</span> Notes</button><button className={page === 'calendar' ? 'selected' : ''} type="button" onClick={() => setPage('calendar')}><span>▦</span> Calendar</button></nav><div className="topbar-tools"><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>{theme === 'dark' ? '☼' : '☾'}</button><ProfileMenu user={user} open={profileOpen} onToggle={setProfileOpen} onSettings={() => { setPage('settings'); setProfileOpen(false) }} onSignOut={() => signOut(auth)} /></div></header>
+      <header className="compact-topbar"><div className="brand"><span className="brand-mark">F</span><span className="brand-copy"><strong>Field Notes</strong><small>Private workspace</small></span></div><nav className="compact-nav"><button className={page === 'notes' ? 'selected' : ''} type="button" onClick={() => setPage('notes')}><span>▤</span> Notes</button><button className={page === 'calendar' ? 'selected' : ''} type="button" onClick={() => setPage('calendar')}><span>▦</span> Calendar</button></nav><div className="topbar-tools"><span className="session-timer" title="Time until automatic sign out"><span className="session-timer-label">Auto sign out</span>{formattedTimeLeft}</span><button className="theme-toggle" type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} aria-label={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`} title={`Switch to ${theme === 'dark' ? 'light' : 'dark'} mode`}>{theme === 'dark' ? '☼' : '☾'}</button><ProfileMenu user={user} open={profileOpen} onToggle={setProfileOpen} onSettings={() => { setPage('settings'); setProfileOpen(false) }} onSignOut={handleSignOut} /></div></header>
       {page === 'settings' ? <SettingsPage theme={theme} density={density} notesCount={notes.length} pinnedCount={pinnedCount} onThemeChange={setTheme} onDensityChange={setDensity} onBack={() => setPage('notes')} /> : page === 'calendar' ? <CalendarView /> : <section className="compact-content">
         <div className="compact-heading"><div><p className="section-kicker">{view === 'pinned' ? 'PINNED NOTES' : 'YOUR NOTES'}</p><h1>{view === 'pinned' ? 'Saved for later.' : 'Your notes.'}</h1></div><div className="compact-date">{new Intl.DateTimeFormat('en', { weekday: 'short', month: 'short', day: 'numeric' }).format(new Date())}<br /><span>{notes.length} notes in your archive</span></div></div>
         <div className="compact-layout">
